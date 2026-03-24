@@ -760,7 +760,7 @@ if "ipca_ultimo_periodo" not in st.session_state:
 # ---------------------------
 st.set_page_config(page_title="Painel Comparativo de Receitas", layout="wide")
 st.title("Painel Comparativo de Receitas")
-st.caption("Receitas nominais, receitas corrigidas, índices de correção, comparação entre exercícios, acumulados, análises mensais e dashboard executivo.")
+st.caption("Receitas nominais, receitas corrigidas, índices de correção, comparação entre exercícios, acumulados e análises mensais.")
 
 with st.sidebar:
     st.header("Parâmetros")
