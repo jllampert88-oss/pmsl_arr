@@ -1,4 +1,4 @@
-# arr_pmslv2.py
+# aarr_pmslv2.py
 
 from datetime import datetime
 import pandas as pd
@@ -450,9 +450,13 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
     rot_anterior = rotulo_competencia(anterior)
     rot_ano_anterior = rotulo_competencia(ano_anterior)
 
-    rot_acum_atual = f"Acum. até {rot_atual}"
-    rot_acum_ano_ant = f"Acum. até {rot_ano_anterior}"
-    rot_var_acum = f"∆% Acum. {rot_atual}/{rot_ano_anterior}"
+    rot_acum_nom_atual = f"Acum. Nominal até {rot_atual}"
+    rot_acum_nom_ano_ant = f"Acum. Nominal até {rot_ano_anterior}"
+    rot_var_acum_nom = f"∆% Acum. Nominal {rot_atual}/{rot_ano_anterior}"
+
+    rot_acum_real_atual = f"Acum. Real até {rot_atual}"
+    rot_acum_real_ano_ant = f"Acum. Real até {rot_ano_anterior}"
+    rot_var_acum_real = f"∆% Acum. Real {rot_atual}/{rot_ano_anterior}"
 
     estrutura = [
         ("Receitas", "Receita Corrente", "RECEITAS CORRENTES"),
@@ -485,8 +489,10 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
         r_anterior = obter_valor_competencia(df_corrigido, anterior, coluna)
         r_ano_anterior = obter_valor_competencia(df_corrigido, ano_anterior, coluna)
 
-        acum_atual = obter_valor_acumulado_ate_competencia(df_nominal, atual, coluna)
-        acum_ano_anterior = obter_valor_acumulado_ate_competencia(df_nominal, ano_anterior, coluna)
+        acum_nom_atual = obter_valor_acumulado_ate_competencia(df_nominal, atual, coluna)
+        acum_nom_ano_ant = obter_valor_acumulado_ate_competencia(df_nominal, ano_anterior, coluna)
+        acum_real_atual = obter_valor_acumulado_ate_competencia(df_corrigido, atual, coluna)
+        acum_real_ano_ant = obter_valor_acumulado_ate_competencia(df_corrigido, ano_anterior, coluna)
 
         linhas.append({
             "Grupo": grupo,
@@ -498,9 +504,13 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
             f"∆% Nominal {rot_atual}/{rot_ano_anterior}": calcular_variacao(n_atual, n_ano_anterior),
             f"∆% Real {rot_atual}/{rot_anterior}": calcular_variacao(r_atual, r_anterior),
             f"∆% Real {rot_atual}/{rot_ano_anterior}": calcular_variacao(r_atual, r_ano_anterior),
-            rot_acum_atual: acum_atual,
-            rot_acum_ano_ant: acum_ano_anterior,
-            rot_var_acum: calcular_variacao(acum_atual, acum_ano_anterior),
+            rot_acum_nom_atual: acum_nom_atual,
+            rot_acum_nom_ano_ant: acum_nom_ano_ant,
+            rot_var_acum_nom: calcular_variacao(acum_nom_atual, acum_nom_ano_ant),
+
+            rot_acum_real_atual: acum_real_atual,
+            rot_acum_real_ano_ant: acum_real_ano_ant,
+            rot_var_acum_real: calcular_variacao(acum_real_atual, acum_real_ano_ant),
         })
 
     df = pd.DataFrame(linhas)
@@ -529,10 +539,18 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
             ),
             f"∆% Real {rot_atual}/{rot_anterior}": np.nan,
             f"∆% Real {rot_atual}/{rot_ano_anterior}": np.nan,
-            rot_acum_atual: sub[rot_acum_atual].sum(),
-            rot_acum_ano_ant: sub[rot_acum_ano_ant].sum(),
-            rot_var_acum: calcular_variacao(
-                sub[rot_acum_atual].sum(), sub[rot_acum_ano_ant].sum()
+            rot_acum_nom_atual: sub[rot_acum_nom_atual].sum(),
+            rot_acum_nom_ano_ant: sub[rot_acum_nom_ano_ant].sum(),
+            rot_var_acum_nom: calcular_variacao(
+                sub[rot_acum_nom_atual].sum(),
+                sub[rot_acum_nom_ano_ant].sum()
+            ),
+
+            rot_acum_real_atual: sub[rot_acum_real_atual].sum(),
+            rot_acum_real_ano_ant: sub[rot_acum_real_ano_ant].sum(),
+            rot_var_acum_real: calcular_variacao(
+                sub[rot_acum_real_atual].sum(),
+                sub[rot_acum_real_ano_ant].sum()
             ),
         })
 
@@ -558,9 +576,12 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
         "rot_atual": rot_atual,
         "rot_anterior": rot_anterior,
         "rot_ano_anterior": rot_ano_anterior,
-        "rot_acum_atual": rot_acum_atual,
-        "rot_acum_ano_ant": rot_acum_ano_ant,
-        "rot_var_acum": rot_var_acum,
+        "rot_acum_nom_atual": rot_acum_nom_atual,
+        "rot_acum_nom_ano_ant": rot_acum_nom_ano_ant,
+        "rot_var_acum_nom": rot_var_acum_nom,
+        "rot_acum_real_atual": rot_acum_real_atual,
+        "rot_acum_real_ano_ant": rot_acum_real_ano_ant,
+        "rot_var_acum_real": rot_var_acum_real,
     }
 
 def montar_base_pizzas(df_corrigido: pd.DataFrame, contexto: dict):
