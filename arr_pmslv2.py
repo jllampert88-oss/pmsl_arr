@@ -118,6 +118,20 @@ MESES_PT = {
 # Funções Auxiliares
 # ---------------------------
 
+def obter_valor_acumulado_ate_competencia(df: pd.DataFrame, competencia: pd.Timestamp, coluna: str) -> float:
+    ano = competencia.year
+    mes = competencia.month
+
+    mask = (
+        (df["Competência"].dt.year == ano) &
+        (df["Competência"].dt.month <= mes)
+    )
+
+    if coluna not in df.columns:
+        return 0.0
+
+    return float(df.loc[mask, coluna].sum())
+
 def gerar_insights_analise(df_analise: pd.DataFrame, df_corrigido: pd.DataFrame, contexto: dict):
     insights = []
 
@@ -317,6 +331,10 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
     rot_anterior = rotulo_competencia(anterior)
     rot_ano_anterior = rotulo_competencia(ano_anterior)
 
+    rot_acum_atual = f"Acum. até {rot_atual}"
+    rot_acum_ano_ant = f"Acum. até {rot_ano_anterior}"
+    rot_var_acum = f"∆% Acum. {rot_atual}/{rot_ano_anterior}"
+
     estrutura = [
         ("Receitas", "Receita Corrente", "RECEITAS CORRENTES"),
         ("Receitas", "Receita Tributária", "IMPOSTOS, TAXAS E CONTRIBUIÇÕES DE MELHORIA"),
@@ -348,6 +366,9 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
         r_anterior = obter_valor_competencia(df_corrigido, anterior, coluna)
         r_ano_anterior = obter_valor_competencia(df_corrigido, ano_anterior, coluna)
 
+        acum_atual = obter_valor_acumulado_ate_competencia(df_nominal, atual, coluna)
+        acum_ano_anterior = obter_valor_acumulado_ate_competencia(df_nominal, ano_anterior, coluna)
+
         linhas.append({
             "Grupo": grupo,
             "Item": item,
@@ -358,41 +379,41 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
             f"∆% Nominal {rot_atual}/{rot_ano_anterior}": calcular_variacao(n_atual, n_ano_anterior),
             f"∆% Real {rot_atual}/{rot_anterior}": calcular_variacao(r_atual, r_anterior),
             f"∆% Real {rot_atual}/{rot_ano_anterior}": calcular_variacao(r_atual, r_ano_anterior),
+            rot_acum_atual: acum_atual,
+            rot_acum_ano_ant: acum_ano_anterior,
+            rot_var_acum: calcular_variacao(acum_atual, acum_ano_anterior),
         })
 
     df = pd.DataFrame(linhas)
 
-    # Totais por bloco
     totais = []
-    for grupo in ["Receitas Próprias", "Receitas Próprias Dívida Ativa", "Receitas de Transferências"]:
+    grupos_totalizar = [
+        "Receitas Próprias",
+        "Receitas Próprias Dívida Ativa",
+        "Receitas de Transferências"
+    ]
+
+    for grupo in grupos_totalizar:
         sub = df[df["Grupo"] == grupo]
+
         totais.append({
             "Grupo": grupo,
             "Item": "Total",
             rot_atual: sub[rot_atual].sum(),
             rot_anterior: sub[rot_anterior].sum(),
             rot_ano_anterior: sub[rot_ano_anterior].sum(),
-            f"∆% Nominal {rot_atual}/{rot_anterior}": calcular_variacao(sub[rot_atual].sum(), sub[rot_anterior].sum()),
-            f"∆% Nominal {rot_atual}/{rot_ano_anterior}": calcular_variacao(sub[rot_atual].sum(), sub[rot_ano_anterior].sum()),
-            f"∆% Real {rot_atual}/{rot_anterior}": calcular_variacao(
-                sum(obter_valor_competencia(df_corrigido, atual, c) for c in sub["Item"].map({
-                    "IPTU": "IPTU", "ISS": "ISS", "ITBI": "ITBI", "TACL": "TACL",
-                    "IPVA": "IPVA", "FPM": "FPM", "ICMS": "ICMS"
-                }).dropna()),
-                sum(obter_valor_competencia(df_corrigido, anterior, c) for c in sub["Item"].map({
-                    "IPTU": "IPTU", "ISS": "ISS", "ITBI": "ITBI", "TACL": "TACL",
-                    "IPVA": "IPVA", "FPM": "FPM", "ICMS": "ICMS"
-                }).dropna())
+            f"∆% Nominal {rot_atual}/{rot_anterior}": calcular_variacao(
+                sub[rot_atual].sum(), sub[rot_anterior].sum()
             ),
-            f"∆% Real {rot_atual}/{rot_ano_anterior}": calcular_variacao(
-                sum(obter_valor_competencia(df_corrigido, atual, c) for c in sub["Item"].map({
-                    "IPTU": "IPTU", "ISS": "ISS", "ITBI": "ITBI", "TACL": "TACL",
-                    "IPVA": "IPVA", "FPM": "FPM", "ICMS": "ICMS"
-                }).dropna()),
-                sum(obter_valor_competencia(df_corrigido, ano_anterior, c) for c in sub["Item"].map({
-                    "IPTU": "IPTU", "ISS": "ISS", "ITBI": "ITBI", "TACL": "TACL",
-                    "IPVA": "IPVA", "FPM": "FPM", "ICMS": "ICMS"
-                }).dropna())
+            f"∆% Nominal {rot_atual}/{rot_ano_anterior}": calcular_variacao(
+                sub[rot_atual].sum(), sub[rot_ano_anterior].sum()
+            ),
+            f"∆% Real {rot_atual}/{rot_anterior}": np.nan,
+            f"∆% Real {rot_atual}/{rot_ano_anterior}": np.nan,
+            rot_acum_atual: sub[rot_acum_atual].sum(),
+            rot_acum_ano_ant: sub[rot_acum_ano_ant].sum(),
+            rot_var_acum: calcular_variacao(
+                sub[rot_acum_atual].sum(), sub[rot_acum_ano_ant].sum()
             ),
         })
 
@@ -418,6 +439,9 @@ def montar_tabela_analise_mensal(df_nominal: pd.DataFrame, df_corrigido: pd.Data
         "rot_atual": rot_atual,
         "rot_anterior": rot_anterior,
         "rot_ano_anterior": rot_ano_anterior,
+        "rot_acum_atual": rot_acum_atual,
+        "rot_acum_ano_ant": rot_acum_ano_ant,
+        "rot_var_acum": rot_var_acum,
     }
 
 def montar_base_pizzas(df_corrigido: pd.DataFrame, contexto: dict):
