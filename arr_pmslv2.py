@@ -1,4 +1,4 @@
-# app_comparativo_receitas.py
+# arr_pmslv2.py
 
 from datetime import datetime
 import pandas as pd
@@ -143,6 +143,10 @@ def gerar_insights_analise(df_analise: pd.DataFrame, df_corrigido: pd.DataFrame,
     rot_anterior = contexto["rot_anterior"]
     rot_ano_anterior = contexto["rot_ano_anterior"]
 
+    rot_acum_atual = contexto.get("rot_acum_atual")
+    rot_acum_ano_ant = contexto.get("rot_acum_ano_ant")
+    rot_var_acum = contexto.get("rot_var_acum")
+
     col_nom_mensal = f"∆% Nominal {rot_atual}/{rot_anterior}"
     col_nom_anual = f"∆% Nominal {rot_atual}/{rot_ano_anterior}"
     col_real_mensal = f"∆% Real {rot_atual}/{rot_anterior}"
@@ -153,8 +157,16 @@ def gerar_insights_analise(df_analise: pd.DataFrame, df_corrigido: pd.DataFrame,
     # -------------------------
     base_pizza_atual = montar_base_pizzas(df_corrigido, contexto)[rot_atual]
 
-    propria = float(base_pizza_atual.loc[base_pizza_atual["Grupo"] == "Receita Própria", "Valor"].iloc[0])
-    transf = float(base_pizza_atual.loc[base_pizza_atual["Grupo"] == "Receita de Transferências", "Valor"].iloc[0])
+    propria = float(
+        base_pizza_atual.loc[
+            base_pizza_atual["Grupo"] == "Receita Própria", "Valor"
+        ].iloc[0]
+    )
+    transf = float(
+        base_pizza_atual.loc[
+            base_pizza_atual["Grupo"] == "Receita de Transferências", "Valor"
+        ].iloc[0]
+    )
     total_escopo = propria + transf
 
     if total_escopo > 0:
@@ -172,17 +184,29 @@ def gerar_insights_analise(df_analise: pd.DataFrame, df_corrigido: pd.DataFrame,
             insights.append("Há elevada dependência de transferências intergovernamentais.")
         elif perc_transf > 0.40:
             insights.append("As transferências têm peso relevante na composição da arrecadação.")
+        else:
+            insights.append("A arrecadação analisada apresenta predominância relativa de receita própria.")
 
     # -------------------------
-    # Receita corrente
+    # Receita corrente - mensal e anual
     # -------------------------
     linha_rc = df_analise[df_analise["Item"] == "Receita Corrente"]
     if not linha_rc.empty:
         linha_rc = linha_rc.iloc[0]
 
+        if pd.notna(linha_rc.get(col_nom_mensal)):
+            insights.append(
+                f"A receita corrente variou {formatar_pct(linha_rc[col_nom_mensal])} nominalmente em relação a {rot_anterior}."
+            )
+
         if pd.notna(linha_rc.get(col_real_mensal)):
             insights.append(
                 f"A variação real da receita corrente em relação a {rot_anterior} foi de {formatar_pct(linha_rc[col_real_mensal])}."
+            )
+
+        if pd.notna(linha_rc.get(col_nom_anual)):
+            insights.append(
+                f"Em comparação com {rot_ano_anterior}, a receita corrente variou {formatar_pct(linha_rc[col_nom_anual])} nominalmente."
             )
 
         if pd.notna(linha_rc.get(col_real_anual)):
@@ -191,7 +215,7 @@ def gerar_insights_analise(df_analise: pd.DataFrame, df_corrigido: pd.DataFrame,
             )
 
     # -------------------------
-    # Maiores altas e quedas
+    # Maiores altas e quedas - escopo detalhado
     # -------------------------
     df_var = df_analise[
         (df_analise["Item"] != "Total")
@@ -213,63 +237,158 @@ def gerar_insights_analise(df_analise: pd.DataFrame, df_corrigido: pd.DataFrame,
             )
 
     # -------------------------
+    # Peso da dívida ativa
+    # -------------------------
+    colunas_da = ["D.A. IPTU", "D.A. ISS", "D.A. ITBI", "D.A. TACL"]
+    colunas_prop = ["IPTU", "ISS", "ITBI", "TACL"]
+
+    total_da = somar_competencia(df_corrigido, atual, colunas_da)
+    total_prop_sem_da = somar_competencia(df_corrigido, atual, colunas_prop)
+    total_prop_com_da = total_da + total_prop_sem_da
+
+    if total_prop_com_da > 0:
+        perc_da_total_prop = total_da / total_prop_com_da
+        insights.append(
+            f"A dívida ativa representa {formatar_pct(perc_da_total_prop)} do conjunto de receitas próprias analisadas."
+        )
+
+    if total_prop_sem_da > 0:
+        perc_da_sobre_principal = total_da / total_prop_sem_da
+        insights.append(
+            f"Em relação às receitas próprias principais, a dívida ativa equivale a {formatar_pct(perc_da_sobre_principal)}."
+        )
+
+    # -------------------------
     # Alertas crescimento e retração
     # -------------------------
-    if not df_var.empty and col_real_mensal in df_var.columns:
+    grupos_alerta = [
+        "Receitas Próprias",
+        "Receitas Próprias Dívida Ativa",
+        "Receitas de Transferências"
+    ]
 
-        fortes_altas = df_var[df_var[col_real_mensal] > 0.10]
-        quedas = df_var[df_var[col_real_mensal] < -0.05]
+    df_alertas = df_analise[
+        (df_analise["Grupo"].isin(grupos_alerta))
+        & (df_analise["Item"] != "Total")
+    ].copy()
+
+    if not df_alertas.empty and col_real_mensal in df_alertas.columns:
+        fortes_altas = df_alertas[df_alertas[col_real_mensal] > 0.10].sort_values(col_real_mensal, ascending=False)
+        quedas_relevantes = df_alertas[df_alertas[col_real_mensal] < -0.05].sort_values(col_real_mensal)
 
         for _, row in fortes_altas.iterrows():
             insights.append(
                 f"Alerta de crescimento: {rotulo_grupo_item(row)} apresentou alta real mensal de {formatar_pct(row[col_real_mensal])}."
             )
 
-        for _, row in quedas.iterrows():
+        for _, row in quedas_relevantes.iterrows():
             insights.append(
                 f"Alerta de retração: {rotulo_grupo_item(row)} apresentou queda real mensal de {formatar_pct(row[col_real_mensal])}."
             )
 
     # -------------------------
-    # Dívida ativa
-    # -------------------------
-    colunas_da = ["D.A. IPTU", "D.A. ISS", "D.A. ITBI", "D.A. TACL"]
-    colunas_prop = ["IPTU", "ISS", "ITBI", "TACL"]
-
-    total_da = somar_competencia(df_corrigido, atual, colunas_da)
-    total_prop = somar_competencia(df_corrigido, atual, colunas_prop)
-
-    if total_prop > 0:
-        insights.append(
-            f"A dívida ativa representa {formatar_pct(total_da / total_prop)} das receitas próprias principais."
-        )
-
-    # -------------------------
-    # Ranking
+    # Ranking das receitas do período
     # -------------------------
     df_rank = ranking_receitas_periodo(df_corrigido, atual)
 
     if not df_rank.empty:
         top3 = df_rank.head(3)
         ranking_txt = "; ".join(
-            f"{row['Item']} ({formatar_pct(row['Participação'])})"
+            f"{row['Item']} ({formatar_num(row['Valor'])}, {formatar_pct(row['Participação'])})"
             for _, row in top3.iterrows()
         )
+        insights.append(f"As três maiores rubricas do período {rot_atual} foram: {ranking_txt}.")
 
-        insights.append(
-            f"As três maiores rubricas no período {rot_atual} foram: {ranking_txt}."
-        )
-
+    # -------------------------
+    # Concentração de arrecadação
+    # -------------------------
+    if not df_rank.empty:
         top1 = df_rank.iloc[0]
+        top3_part = df_rank.head(3)["Participação"].sum()
 
         if top1["Participação"] > 0.40:
             insights.append(
-                f"Há concentração relevante em {top1['Item']}, que responde por {formatar_pct(top1['Participação'])} do total."
+                f"Há concentração relevante da arrecadação em {top1['Item']}, que responde por {formatar_pct(top1['Participação'])} do total analisado."
             )
 
-    # remover duplicidades
-    insights_unicos = list(dict.fromkeys(insights))
+        insights.append(
+            f"As três maiores rubricas concentram {formatar_pct(top3_part)} do total analisado."
+        )
 
+    # -------------------------
+    # Receita própria x transferências - comparação com mês anterior
+    # -------------------------
+    base_pizzas = montar_base_pizzas(df_corrigido, contexto)
+
+    if rot_anterior in base_pizzas:
+        base_ant = base_pizzas[rot_anterior]
+        propria_ant = float(base_ant.loc[base_ant["Grupo"] == "Receita Própria", "Valor"].iloc[0])
+        transf_ant = float(base_ant.loc[base_ant["Grupo"] == "Receita de Transferências", "Valor"].iloc[0])
+
+        total_ant = propria_ant + transf_ant
+        if total_escopo > 0 and total_ant > 0:
+            perc_prop_ant = propria_ant / total_ant
+            perc_transf_ant = transf_ant / total_ant
+
+            delta_prop = (propria / total_escopo) - perc_prop_ant
+            delta_transf = (transf / total_escopo) - perc_transf_ant
+
+            insights.append(
+                f"A participação da receita própria mudou {formatar_pct(delta_prop)} em relação a {rot_anterior}."
+            )
+            insights.append(
+                f"A participação das transferências mudou {formatar_pct(delta_transf)} em relação a {rot_anterior}."
+            )
+
+    # -------------------------
+    # INSIGHTS DE ACUMULADO
+    # -------------------------
+    linha_rc_acum = df_analise[df_analise["Item"] == "Receita Corrente"]
+
+    if (
+        not linha_rc_acum.empty
+        and rot_var_acum is not None
+        and rot_var_acum in linha_rc_acum.columns
+    ):
+        linha_rc_acum = linha_rc_acum.iloc[0]
+
+        if pd.notna(linha_rc_acum[rot_var_acum]):
+            insights.append(
+                f"No acumulado até {rot_atual}, a receita corrente apresenta variação de {formatar_pct(linha_rc_acum[rot_var_acum])} em relação ao mesmo período do exercício anterior."
+            )
+
+    # -------------------------
+    # Maior contribuição e maior pressão no acumulado
+    # -------------------------
+    df_acum = df_analise[
+        (df_analise["Item"] != "Total") &
+        (df_analise["Grupo"] != "Receitas")
+    ].copy()
+
+    if (
+        rot_acum_atual is not None
+        and rot_acum_ano_ant is not None
+        and rot_acum_atual in df_acum.columns
+        and rot_acum_ano_ant in df_acum.columns
+    ):
+        df_acum["Delta"] = df_acum[rot_acum_atual] - df_acum[rot_acum_ano_ant]
+        df_acum_valid = df_acum.dropna(subset=["Delta"]).copy()
+
+        if not df_acum_valid.empty:
+            maior_pos = df_acum_valid.loc[df_acum_valid["Delta"].idxmax()]
+            maior_neg = df_acum_valid.loc[df_acum_valid["Delta"].idxmin()]
+
+            insights.append(
+                f"O principal fator de crescimento acumulado foi {rotulo_grupo_item(maior_pos)}."
+            )
+
+            if maior_neg["Delta"] < 0:
+                insights.append(
+                    f"A maior pressão negativa no acumulado decorre de {rotulo_grupo_item(maior_neg)}."
+                )
+
+    # Remover duplicidades preservando ordem
+    insights_unicos = list(dict.fromkeys(insights))
     return insights_unicos, df_rank
 
 def rotulo_grupo_item(row) -> str:
