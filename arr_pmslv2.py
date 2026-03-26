@@ -642,7 +642,10 @@ def formatar_tabela_analise(df: pd.DataFrame) -> pd.DataFrame:
 # ---------------------------
 # Funções API Transparência
 # ---------------------------
-def get_receita(exercicio: int, mes: int):
+def get_receita(exercicio: int, mes: int, max_tentativas: int = 10):
+    """Consulta arrecadação no Portal da Transparência para um ano/mês,
+    repetindo a chamada em caso de HTTP 500.
+    """
     payload = {
         "exercicio": str(exercicio),
         "mes": f"{mes:02d}",
@@ -653,10 +656,60 @@ def get_receita(exercicio: int, mes: int):
         "grau": "10",
         "sequencia": None
     }
-    headers = {"Content-Type": "application/json", "User-Agent": "Mozilla/5.0"}
-    r = requests.post(URL_TRANSPARENCIA, headers=headers, json=payload, timeout=30)
-    r.raise_for_status()
-    return r.json().get("resultado", [])
+
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0"
+    }
+
+    ultimo_erro = None
+
+    for tentativa in range(1, max_tentativas + 1):
+        try:
+            r = requests.post(
+                URL_TRANSPARENCIA,
+                headers=headers,
+                json=payload,
+                timeout=30
+            )
+
+            if r.status_code == 500:
+                raise requests.exceptions.HTTPError(
+                    f"HTTP 500 na tentativa {tentativa} para {exercicio}-{mes:02d}",
+                    response=r
+                )
+
+            r.raise_for_status()
+
+            json_resp = r.json()
+            return json_resp.get("resultado", [])
+
+        except requests.exceptions.HTTPError as e:
+            ultimo_erro = e
+            status_code = None
+            if getattr(e, "response", None) is not None:
+                status_code = e.response.status_code
+
+            if status_code == 500 and tentativa < max_tentativas:
+                print(f"[WARN] Erro 500 para {exercicio}-{mes:02d} | tentativa {tentativa}/{max_tentativas}. Tentando novamente...")
+                continue
+
+            raise
+
+        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
+            ultimo_erro = e
+
+            if tentativa < max_tentativas:
+                print(f"[WARN] Erro de conexão/timeout para {exercicio}-{mes:02d} | tentativa {tentativa}/{max_tentativas}. Tentando novamente...")
+                continue
+
+            raise
+
+        except Exception as e:
+            ultimo_erro = e
+            raise
+
+    raise ultimo_erro
 
 @st.cache_data(show_spinner=False)
 def load_balancete_api(data_inicio: str, data_fim: str) -> pd.DataFrame:
